@@ -1,0 +1,1786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GCode Builder</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #1e1e1e;
+    --surface: #252526;
+    --surface2: #2d2d2d;
+    --border: #3e3e42;
+    --text: #d4d4d4;
+    --text-dim: #888;
+    --accent: #0078d4;
+    --accent-hover: #106ebe;
+    --green: #4ec9b0;
+    --orange: #ce9178;
+    --red: #f44747;
+    --yellow: #dcdcaa;
+    --badge-g0: #264f78;
+    --badge-g0-text: #9cdcfe;
+    --badge-g1: #1e3a1e;
+    --badge-g1-text: #4ec9b0;
+    --badge-slot: #3b2a4a;
+    --badge-slot-text: #c586c0;
+    --badge-circ: #1a3040;
+    --badge-circ-text: #4fc3f7;
+  }
+
+  body {
+    font-family: 'Consolas', 'Cascadia Code', 'Menlo', monospace;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 13px;
+  }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  header h1 { font-size: 16px; font-weight: 600; color: var(--yellow); white-space: nowrap; }
+
+  #program-name {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 13px;
+    width: 200px;
+  }
+  #program-name:focus { outline: 1px solid var(--accent); }
+  .header-spacer { flex: 1; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--surface2);
+    color: var(--text);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: #3e3e3e; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-hover); }
+  .btn.small { padding: 3px 7px; font-size: 11px; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  main {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    grid-template-rows: auto 1fr;
+    gap: 0;
+    height: calc(100vh - 45px);
+  }
+
+  .settings-bar {
+    grid-column: 1 / -1;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .settings-bar label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+  .settings-bar select,
+  .settings-bar input[type="number"] {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 3px 6px;
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 12px;
+  }
+  .settings-bar select:focus,
+  .settings-bar input:focus { outline: 1px solid var(--accent); }
+  .settings-bar input[type="number"] { width: 70px; }
+
+  .panel-left {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .panel-toolbar {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+  }
+  .panel-toolbar h2 {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex: 1;
+  }
+
+  /* Dropdown for "Add Action" */
+  .dropdown-wrap { position: relative; }
+  .dropdown-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    min-width: 130px;
+    z-index: 50;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  }
+  .dropdown-menu.open { display: block; }
+  .dropdown-menu button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 12px;
+    background: none;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    text-align: left;
+  }
+  .dropdown-menu button:hover { background: var(--surface); }
+  .dropdown-menu .menu-badge {
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-weight: 600;
+  }
+
+  .steps-scroll {
+    flex: 1;
+    overflow-y: auto;
+  }
+  .steps-scroll::-webkit-scrollbar { width: 6px; }
+  .steps-scroll::-webkit-scrollbar-track { background: var(--bg); }
+  .steps-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  table { width: 100%; border-collapse: collapse; }
+
+  thead th {
+    background: var(--surface);
+    padding: 6px 10px;
+    text-align: left;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+  tbody tr:hover { background: var(--surface2); }
+  tbody tr.step-action { background: #1f1a27; }
+  tbody tr.step-action:hover { background: #2a2234; }
+
+  tbody td { padding: 6px 10px; vertical-align: middle; }
+  td.col-num { color: var(--text-dim); width: 36px; text-align: right; padding-right: 12px; }
+  td.col-type { width: 60px; }
+  td.col-coord { width: 80px; font-variant-numeric: tabular-nums; }
+  td.col-feed { width: 70px; font-variant-numeric: tabular-nums; }
+  td.col-comment { color: var(--text-dim); }
+  td.col-actions { width: 110px; white-space: nowrap; }
+  td.col-params { color: var(--text-dim); font-size: 12px; }
+  td.col-params span.pv { color: var(--text); }
+
+  .badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-g0   { background: var(--badge-g0);   color: var(--badge-g0-text); }
+  .badge-g1   { background: var(--badge-g1);   color: var(--badge-g1-text); }
+  .badge-slot { background: var(--badge-slot); color: var(--badge-slot-text); }
+  .badge-circ { background: var(--badge-circ); color: var(--badge-circ-text); }
+
+  .coord-val   { color: var(--text); }
+  .coord-empty { color: #444; }
+
+  .action-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 13px;
+    line-height: 1;
+    transition: color 0.15s, background 0.15s;
+  }
+  .action-btn:hover { color: var(--text); background: var(--border); }
+  .action-btn.del:hover { color: var(--red); background: #3a1a1a; }
+  .action-btn:disabled { opacity: 0.2; cursor: not-allowed; }
+  .action-btn:disabled:hover { background: none; color: var(--text-dim); }
+
+  .empty-state {
+    padding: 48px 20px;
+    text-align: center;
+    color: var(--text-dim);
+  }
+  .empty-state p:first-child { font-size: 14px; margin-bottom: 6px; }
+
+  /* Right panel */
+  .panel-right { display: flex; flex-direction: column; overflow: hidden; }
+
+  #gcode-output {
+    flex: 1;
+    background: var(--bg);
+    color: #6a9955;
+    border: none;
+    padding: 12px;
+    font-family: inherit;
+    font-size: 12px;
+    resize: none;
+    outline: none;
+    line-height: 1.6;
+    overflow-y: auto;
+  }
+  #gcode-output::-webkit-scrollbar { width: 6px; }
+  #gcode-output::-webkit-scrollbar-track { background: var(--bg); }
+  #gcode-output::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* Modals */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+  }
+  .modal-overlay.open { opacity: 1; pointer-events: all; }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px;
+    width: 400px;
+    transform: translateY(-10px);
+    transition: transform 0.15s;
+  }
+  .modal-overlay.open .modal { transform: translateY(0); }
+
+  .modal h3 { font-size: 14px; margin-bottom: 16px; color: var(--yellow); }
+
+  .form-row { display: flex; gap: 10px; margin-bottom: 12px; }
+
+  .form-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .form-group label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .form-group input,
+  .form-group select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 8px;
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 13px;
+    width: 100%;
+  }
+  .form-group input:focus,
+  .form-group select:focus { outline: 1px solid var(--accent); }
+
+  .form-hint { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+
+  .modal-error { color: var(--red); font-size: 12px; margin-top: 4px; display: none; }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .form-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 14px 0 12px;
+  }
+
+  .settings-sep {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+
+  .settings-bar input[type="text"] {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 3px 6px;
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 12px;
+  }
+  .settings-bar input[type="text"]:focus { outline: 1px solid var(--accent); }
+
+  .btn.gsender { background: #1a3a1a; border-color: #2a5a2a; color: #4ec9b0; }
+  .btn.gsender:hover { background: #214521; }
+  .btn.gsender:disabled { opacity: 0.5; }
+
+  .scan-wrap { position: relative; display: inline-flex; align-items: center; }
+  .btn.scan { background: var(--surface2); border-color: var(--border); color: var(--text-dim); padding: 2px 6px; font-size: 11px; }
+  .btn.scan:hover { color: var(--text); border-color: var(--accent); }
+  .btn.scan:disabled { opacity: 0.5; }
+  .scan-dropdown {
+    display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 200;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 4px;
+    min-width: 140px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  }
+  .scan-dropdown.open { display: block; }
+  .scan-dropdown button {
+    display: block; width: 100%; text-align: left; background: none;
+    border: none; color: var(--text); padding: 6px 10px; cursor: pointer;
+    font-family: inherit; font-size: 12px;
+  }
+  .scan-dropdown button:hover { background: var(--accent); color: #fff; }
+
+  .copy-toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: #333;
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: 4px;
+    font-size: 12px;
+    border: 1px solid var(--border);
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+    z-index: 200;
+  }
+  .copy-toast.show { opacity: 1; transform: translateY(0); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>&#x2699; GCode Builder</h1>
+  <input type="text" id="program-name" value="untitled" placeholder="Program name">
+  <div class="header-spacer"></div>
+</header>
+
+<main>
+  <div class="settings-bar">
+    <label>Units
+      <select id="setting-units">
+        <option value="mm">mm (G21)</option>
+        <option value="inch">inch (G20)</option>
+      </select>
+    </label>
+    <label>Positioning
+      <select id="setting-positioning">
+        <option value="absolute">Absolute (G90)</option>
+        <option value="incremental">Incremental (G91)</option>
+      </select>
+    </label>
+    <label>Safe Z
+      <input type="number" id="setting-safez" value="5" step="0.1">
+    </label>
+    <label>
+      <input type="checkbox" id="setting-safez-move" checked>
+      Retract to safe Z at start
+    </label>
+    <label>
+      <input type="checkbox" id="setting-spindle">
+      Spindle on/off (M3/M5)
+    </label>
+    <label id="spindle-rpm-label" style="display:none">RPM
+      <input type="number" id="setting-rpm" value="10000" step="100" min="1" style="width:80px">
+    </label>
+
+    <div class="settings-sep"></div>
+
+    <label title="gSender host">&#x2699; gSender
+      <div class="scan-wrap">
+        <input type="text" id="gs-host" value="localhost" style="width:90px" placeholder="localhost">
+        <button class="btn scan" id="btn-scan" onclick="discoverGSender(event)" title="Scan network for gSender" style="display:none">&#x1F50D;</button>
+        <div class="scan-dropdown" id="scan-dropdown"></div>
+      </div>
+      :
+      <input type="text" id="gs-http-port" value="8000" inputmode="numeric" pattern="[0-9]*" style="width:58px" title="gSender HTTP port">
+    </label>
+    <label title="Enable subnet scan to discover gSender on the network">
+      <input type="checkbox" id="gs-scan-enabled" onchange="toggleScanBtn()"> Enable scan
+    </label>
+  </div>
+
+  <!-- Left panel: steps -->
+  <div class="panel-left">
+    <div class="panel-toolbar">
+      <h2>Program Steps</h2>
+      <button class="btn small" onclick="clearAll()">Clear all</button>
+      <button class="btn small" onclick="openMoveModal()">+ Move</button>
+      <div class="dropdown-wrap">
+        <button class="btn small primary" onclick="toggleActionMenu(event)">+ Action &#x25BE;</button>
+        <div class="dropdown-menu" id="action-menu">
+          <button onclick="openSlotModal(); closeActionMenu()">
+            <span class="menu-badge badge-slot">SLOT</span> Slot
+          </button>
+          <button onclick="openCircleModal(); closeActionMenu()">
+            <span class="menu-badge badge-circ">CIRC</span> Circle
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="steps-scroll">
+      <table id="steps-table">
+        <thead>
+          <tr>
+            <th class="col-num">#</th>
+            <th class="col-type">Type</th>
+            <th class="col-coord">X</th>
+            <th class="col-coord">Y</th>
+            <th class="col-coord">Z</th>
+            <th class="col-feed">Feed (F)</th>
+            <th class="col-comment">Comment</th>
+            <th class="col-actions"></th>
+          </tr>
+        </thead>
+        <tbody id="steps-body"></tbody>
+      </table>
+      <div id="empty-state" class="empty-state">
+        <p>No steps yet</p>
+        <p style="font-size:12px">Use <strong>+ Move</strong> for individual movements or <strong>+ Action</strong> for parametric operations</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right panel: G-code -->
+  <div class="panel-right">
+    <div class="panel-toolbar">
+      <h2>G-Code Output</h2>
+      <button class="btn small" onclick="copyGCode()">Copy</button>
+      <button class="btn small primary" onclick="downloadGCode()">&#x2193; Download .nc</button>
+      <button class="btn small gsender" id="btn-gsender" onclick="sendToGSender()">&#x25B6; Send to gSender</button>
+    </div>
+    <textarea id="gcode-output" readonly spellcheck="false"
+      placeholder="; G-code will appear here&#10;; Add steps and it updates automatically"></textarea>
+  </div>
+</main>
+
+<!-- ── Move Modal ──────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="move-modal-overlay" onclick="closeMoveModalOnBg(event)">
+  <div class="modal">
+    <h3 id="move-modal-title">Add Move</h3>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Move Type</label>
+        <select id="f-type" onchange="onMoveTypeChange()">
+          <option value="G0">G0 — Rapid</option>
+          <option value="G1" selected>G1 — Feed</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>X</label>
+        <input type="number" id="f-x" placeholder="—" step="0.001">
+      </div>
+      <div class="form-group">
+        <label>Y</label>
+        <input type="number" id="f-y" placeholder="—" step="0.001">
+      </div>
+      <div class="form-group">
+        <label>Z</label>
+        <input type="number" id="f-z" placeholder="—" step="0.001">
+      </div>
+    </div>
+
+    <div class="form-row" id="move-feed-row">
+      <div class="form-group">
+        <label>Feed Rate (F)</label>
+        <input type="number" id="f-feed" placeholder="e.g. 500" step="1" min="1">
+      </div>
+      <div class="form-group" style="flex:2">
+        <label>Comment (optional)</label>
+        <input type="text" id="f-comment" placeholder="">
+      </div>
+    </div>
+
+    <div class="form-row" id="move-comment-g0-row" style="display:none">
+      <div class="form-group">
+        <label>Comment (optional)</label>
+        <input type="text" id="f-comment-g0" placeholder="">
+      </div>
+    </div>
+
+    <div class="modal-error" id="move-modal-error"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeMoveModal()">Cancel</button>
+      <button class="btn primary" onclick="saveMove()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Slot Action Modal ───────────────────────────────────────────────── -->
+<div class="modal-overlay" id="slot-modal-overlay" onclick="closeSlotModalOnBg(event)">
+  <div class="modal">
+    <h3 id="slot-modal-title">Add Slot</h3>
+
+    <!-- Position -->
+    <div class="form-row">
+      <div class="form-group">
+        <label>Center X</label>
+        <input type="number" id="s-cx" placeholder="0" step="0.001">
+        <span class="form-hint">X center of the slot</span>
+      </div>
+      <div class="form-group">
+        <label>Start Y</label>
+        <input type="number" id="s-sy" placeholder="0" step="0.001">
+        <span class="form-hint">Y position where slot begins</span>
+      </div>
+    </div>
+
+    <hr class="form-divider">
+
+    <!-- Dimensions -->
+    <div class="form-row">
+      <div class="form-group">
+        <label>Width (X)</label>
+        <input type="number" id="s-width" placeholder="e.g. 5" step="0.001" min="0.001">
+        <span class="form-hint">Total slot width in X</span>
+      </div>
+      <div class="form-group">
+        <label>Length (Y)</label>
+        <input type="number" id="s-length" placeholder="e.g. 20" step="0.001" min="0.001">
+        <span class="form-hint">Slot length in +Y direction</span>
+      </div>
+      <div class="form-group">
+        <label>Depth (Z)</label>
+        <input type="number" id="s-depth" placeholder="e.g. 3" step="0.001" min="0.001">
+        <span class="form-hint">Cut depth (positive)</span>
+      </div>
+    </div>
+
+    <hr class="form-divider">
+
+    <!-- Feeds -->
+    <div class="form-row">
+      <div class="form-group">
+        <label>Feed Rate (F)</label>
+        <input type="number" id="s-feed" placeholder="e.g. 500" step="1" min="1">
+        <span class="form-hint">Cutting feed rate</span>
+      </div>
+      <div class="form-group">
+        <label>Plunge / Ramp Feed</label>
+        <input type="number" id="s-plunge" placeholder="default: F÷2" step="1" min="1">
+        <span class="form-hint">Entry feed rate</span>
+      </div>
+    </div>
+
+    <hr class="form-divider">
+
+    <hr class="form-divider">
+
+    <!-- Tool & entry -->
+    <div class="form-row">
+      <div class="form-group">
+        <label>End Mill Diameter</label>
+        <div style="display:flex;gap:5px">
+          <input type="number" id="s-tool-d" placeholder="optional" step="0.001" min="0.001" style="flex:1;min-width:0">
+          <select id="s-tool-d-preset" onchange="applySlotEndMillPreset()"
+              title="Fill from common size" style="width:auto;padding:6px 4px;background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:3px;font-family:inherit;font-size:11px;cursor:pointer;flex:none">
+            <option value="">sizes ▾</option>
+            <optgroup label="Fractional inch">
+              <option value="1.5875">1/16"  —  1.588 mm</option>
+              <option value="2.3813">3/32"  —  2.381 mm</option>
+              <option value="3.175" >1/8"   —  3.175 mm</option>
+              <option value="3.9688">5/32"  —  3.969 mm</option>
+              <option value="4.7625">3/16"  —  4.763 mm</option>
+              <option value="6.35"  >1/4"   —  6.350 mm</option>
+              <option value="7.9375">5/16"  —  7.938 mm</option>
+              <option value="9.525" >3/8"   —  9.525 mm</option>
+              <option value="12.7"  >1/2"   — 12.700 mm</option>
+              <option value="15.875">5/8"   — 15.875 mm</option>
+              <option value="19.05" >3/4"   — 19.050 mm</option>
+              <option value="25.4"  >1"     — 25.400 mm</option>
+            </optgroup>
+            <optgroup label="Metric">
+              <option value="1" >1 mm  — 0.039"</option>
+              <option value="2" >2 mm  — 0.079"</option>
+              <option value="3" >3 mm  — 0.118"</option>
+              <option value="4" >4 mm  — 0.157"</option>
+              <option value="5" >5 mm  — 0.197"</option>
+              <option value="6" >6 mm  — 0.236"</option>
+              <option value="8" >8 mm  — 0.315"</option>
+              <option value="10">10 mm — 0.394"</option>
+              <option value="12">12 mm — 0.472"</option>
+              <option value="16">16 mm — 0.630"</option>
+              <option value="20">20 mm — 0.787"</option>
+            </optgroup>
+          </select>
+        </div>
+        <span class="form-hint">Offsets toolpath from slot walls</span>
+      </div>
+      <div class="form-group">
+        <label>Entry Type</label>
+        <select id="s-entry-type" onchange="onSlotEntryChange()">
+          <option value="plunge">Plunge</option>
+          <option value="ramp">Ramp</option>
+        </select>
+      </div>
+      <div class="form-group" id="s-ramp-group" style="display:none">
+        <label>Ramp Angle (°)</label>
+        <input type="number" id="s-ramp-angle" value="3" placeholder="3" step="0.1" min="0.1" max="89">
+        <span class="form-hint">Entry angle in degrees</span>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Max Stepover</label>
+        <input type="number" id="s-stepover" placeholder="optional" step="0.001" min="0.001">
+        <span class="form-hint">Max XY cut per pass</span>
+      </div>
+      <div class="form-group">
+        <label>Max Stepdown</label>
+        <input type="number" id="s-stepdown" placeholder="optional" step="0.001" min="0.001">
+        <span class="form-hint">Max Z depth per pass</span>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Comment (optional)</label>
+        <input type="text" id="s-comment" placeholder="">
+      </div>
+    </div>
+
+    <div class="modal-error" id="slot-modal-error"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeSlotModal()">Cancel</button>
+      <button class="btn primary" onclick="saveSlot()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Circle Action Modal ─────────────────────────────────────────────── -->
+<div class="modal-overlay" id="circ-modal-overlay" onclick="closeCircleModalOnBg(event)">
+  <div class="modal">
+    <h3 id="circ-modal-title">Add Circle</h3>
+
+    <!-- Position -->
+    <div class="form-row">
+      <div class="form-group">
+        <label>Center X</label>
+        <input type="number" id="c-cx" placeholder="0" step="0.001">
+        <span class="form-hint">X center of circle</span>
+      </div>
+      <div class="form-group">
+        <label>Center Y</label>
+        <input type="number" id="c-cy" placeholder="0" step="0.001">
+        <span class="form-hint">Y center of circle</span>
+      </div>
+    </div>
+
+    <hr class="form-divider">
+
+    <!-- Dimensions -->
+    <div class="form-row">
+      <div class="form-group">
+        <label>Diameter</label>
+        <input type="number" id="c-diameter" placeholder="e.g. 20" step="0.001" min="0.001">
+        <span class="form-hint">Full circle diameter</span>
+      </div>
+      <div class="form-group">
+        <label>Depth (Z)</label>
+        <input type="number" id="c-depth" placeholder="e.g. 3" step="0.001" min="0.001">
+        <span class="form-hint">Cut depth (positive)</span>
+      </div>
+    </div>
+
+    <hr class="form-divider">
+
+    <!-- Feeds -->
+    <div class="form-row">
+      <div class="form-group">
+        <label>Feed Rate (F)</label>
+        <input type="number" id="c-feed" placeholder="e.g. 500" step="1" min="1">
+        <span class="form-hint">Cutting feed rate</span>
+      </div>
+      <div class="form-group">
+        <label>Plunge / Ramp Feed</label>
+        <input type="number" id="c-plunge" placeholder="default: F÷2" step="1" min="1">
+        <span class="form-hint">Entry feed rate</span>
+      </div>
+    </div>
+
+    <hr class="form-divider">
+
+    <hr class="form-divider">
+
+    <!-- Tool & motion -->
+    <div class="form-row">
+      <div class="form-group">
+        <label>End Mill Diameter</label>
+        <div style="display:flex;gap:5px">
+          <input type="number" id="c-tool-d" placeholder="optional" step="0.001" min="0.001" style="flex:1;min-width:0">
+          <select id="c-tool-d-preset" onchange="applyCircleEndMillPreset()"
+              title="Fill from common size" style="width:auto;padding:6px 4px;background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:3px;font-family:inherit;font-size:11px;cursor:pointer;flex:none">
+            <option value="">sizes ▾</option>
+            <optgroup label="Fractional inch">
+              <option value="1.5875">1/16"  —  1.588 mm</option>
+              <option value="2.3813">3/32"  —  2.381 mm</option>
+              <option value="3.175" >1/8"   —  3.175 mm</option>
+              <option value="3.9688">5/32"  —  3.969 mm</option>
+              <option value="4.7625">3/16"  —  4.763 mm</option>
+              <option value="6.35"  >1/4"   —  6.350 mm</option>
+              <option value="7.9375">5/16"  —  7.938 mm</option>
+              <option value="9.525" >3/8"   —  9.525 mm</option>
+              <option value="12.7"  >1/2"   — 12.700 mm</option>
+              <option value="15.875">5/8"   — 15.875 mm</option>
+              <option value="19.05" >3/4"   — 19.050 mm</option>
+              <option value="25.4"  >1"     — 25.400 mm</option>
+            </optgroup>
+            <optgroup label="Metric">
+              <option value="1" >1 mm  — 0.039"</option>
+              <option value="2" >2 mm  — 0.079"</option>
+              <option value="3" >3 mm  — 0.118"</option>
+              <option value="4" >4 mm  — 0.157"</option>
+              <option value="5" >5 mm  — 0.197"</option>
+              <option value="6" >6 mm  — 0.236"</option>
+              <option value="8" >8 mm  — 0.315"</option>
+              <option value="10">10 mm — 0.394"</option>
+              <option value="12">12 mm — 0.472"</option>
+              <option value="16">16 mm — 0.630"</option>
+              <option value="20">20 mm — 0.787"</option>
+            </optgroup>
+          </select>
+        </div>
+        <span class="form-hint">Offsets toolpath from circle wall</span>
+      </div>
+      <div class="form-group">
+        <label>Direction</label>
+        <select id="c-direction">
+          <option value="ccw">CCW — G3 (conventional)</option>
+          <option value="cw">CW — G2 (climb)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Entry Type</label>
+        <select id="c-entry-type" onchange="onCircleEntryChange()">
+          <option value="plunge">Plunge</option>
+          <option value="ramp">Helical Ramp</option>
+        </select>
+      </div>
+      <div class="form-group" id="c-ramp-group" style="display:none">
+        <label>Ramp Angle (°)</label>
+        <input type="number" id="c-ramp-angle" value="3" placeholder="3" step="0.1" min="0.1" max="89">
+        <span class="form-hint">Descent angle per revolution</span>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Pocket Stepover</label>
+        <input type="number" id="c-stepover" placeholder="optional" step="0.001" min="0.001">
+        <span class="form-hint">Radial pass spacing for pocket clearing; blank = perimeter only</span>
+      </div>
+      <div class="form-group">
+        <label>Max Stepdown</label>
+        <input type="number" id="c-stepdown" placeholder="optional" step="0.001" min="0.001">
+        <span class="form-hint">Max Z depth per pass</span>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Comment (optional)</label>
+        <input type="text" id="c-comment" placeholder="">
+      </div>
+    </div>
+
+    <div class="modal-error" id="circ-modal-error"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeCircleModal()">Cancel</button>
+      <button class="btn primary" onclick="saveCircle()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="copy-toast" id="copy-toast"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+let steps = [];
+let editingIndex = null;
+let nextId = 1;
+
+// ── Settings ───────────────────────────────────────────────────────────────────
+const settings = {
+  get units()       { return document.getElementById('setting-units').value; },
+  get positioning() { return document.getElementById('setting-positioning').value; },
+  get safeZ()       { return parseFloat(document.getElementById('setting-safez').value) || 5; },
+  get safeZMove()   { return document.getElementById('setting-safez-move').checked; },
+  get spindle()     { return document.getElementById('setting-spindle').checked; },
+  get rpm()         { return parseInt(document.getElementById('setting-rpm').value) || 10000; },
+};
+
+document.getElementById('setting-spindle').addEventListener('change', function() {
+  document.getElementById('spindle-rpm-label').style.display = this.checked ? '' : 'none';
+  renderGCode();
+});
+['setting-units','setting-positioning','setting-safez','setting-safez-move','setting-rpm']
+  .forEach(id => document.getElementById(id).addEventListener('change', renderGCode));
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function fc(val) {
+  return parseFloat(parseFloat(val).toFixed(4)).toString();
+}
+
+function fmtCell(val) {
+  if (val === null || val === undefined || val === '') return '<span class="coord-empty">—</span>';
+  return `<span class="coord-val">${parseFloat(val).toFixed(3)}</span>`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Render table ───────────────────────────────────────────────────────────────
+function render() {
+  const tbody  = document.getElementById('steps-body');
+  const empty  = document.getElementById('empty-state');
+  const table  = document.getElementById('steps-table');
+  const n      = steps.length;
+
+  if (n === 0) {
+    table.style.display = 'none';
+    empty.style.display = '';
+    renderGCode();
+    return;
+  }
+
+  table.style.display = '';
+  empty.style.display = 'none';
+
+  tbody.innerHTML = steps.map((s, i) => {
+    const upDis   = i === 0     ? 'disabled' : '';
+    const downDis = i === n - 1 ? 'disabled' : '';
+    const rowBtns = `
+      <button class="action-btn" onclick="stepUp(${i})"   ${upDis}   title="Move up">&#x25B2;</button>
+      <button class="action-btn" onclick="stepDown(${i})" ${downDis} title="Move down">&#x25BC;</button>
+      <button class="action-btn" onclick="editStep(${i})"             title="Edit">&#x270E;</button>
+      <button class="action-btn del" onclick="deleteStep(${i})"       title="Delete">&#x2715;</button>`;
+
+    if (s.kind === 'move') {
+      const badge = s.type === 'G0'
+        ? '<span class="badge badge-g0">G0</span>'
+        : '<span class="badge badge-g1">G1</span>';
+      const feed = (s.type === 'G1' && s.f != null) ? s.f : '<span class="coord-empty">—</span>';
+      const comment = s.comment ? escHtml(s.comment) : '';
+      return `<tr>
+        <td class="col-num">${i+1}</td>
+        <td class="col-type">${badge}</td>
+        <td class="col-coord">${fmtCell(s.x)}</td>
+        <td class="col-coord">${fmtCell(s.y)}</td>
+        <td class="col-coord">${fmtCell(s.z)}</td>
+        <td class="col-feed">${feed}</td>
+        <td class="col-comment">${comment}</td>
+        <td class="col-actions">${rowBtns}</td>
+      </tr>`;
+    }
+
+    if (s.kind === 'slot') {
+      const comment   = s.comment ? escHtml(s.comment) : '';
+      const pv        = v => `<span class="pv">${v}</span>`;
+      const toolPart  = s.toolDiameter != null ? ` &nbsp;&#x2300;:${pv(fc(s.toolDiameter))}` : '';
+      const entryPart = s.entryType === 'ramp' ? ` &nbsp;Ramp:${pv(s.rampAngle || 3)}°` : ' &nbsp;Plunge';
+      const params    = `Cx:${pv(fc(s.cx))} &nbsp;sY:${pv(fc(s.sy))} &nbsp;W:${pv(fc(s.width))} &nbsp;L:${pv(fc(s.length))} &nbsp;D:${pv(fc(s.depth))}${toolPart}${entryPart}`;
+      return `<tr class="step-action">
+        <td class="col-num">${i+1}</td>
+        <td class="col-type"><span class="badge badge-slot">SLOT</span></td>
+        <td class="col-params" colspan="3">${params}</td>
+        <td class="col-feed">${s.feed}</td>
+        <td class="col-comment">${comment}</td>
+        <td class="col-actions">${rowBtns}</td>
+      </tr>`;
+    }
+
+    if (s.kind === 'circle') {
+      const comment   = s.comment ? escHtml(s.comment) : '';
+      const pv        = v => `<span class="pv">${v}</span>`;
+      const toolPart  = s.toolDiameter != null ? ` &nbsp;&#x2300;:${pv(fc(s.toolDiameter))}` : '';
+      const dirPart   = s.direction === 'cw' ? ' &nbsp;CW' : ' &nbsp;CCW';
+      const entryPart = s.entryType === 'ramp' ? ` &nbsp;Ramp:${pv(s.rampAngle || 3)}°` : ' &nbsp;Plunge';
+      const params    = `Cx:${pv(fc(s.cx))} &nbsp;Cy:${pv(fc(s.cy))} &nbsp;Dia:${pv(fc(s.diameter))} &nbsp;D:${pv(fc(s.depth))}${toolPart}${dirPart}${entryPart}`;
+      return `<tr class="step-action">
+        <td class="col-num">${i+1}</td>
+        <td class="col-type"><span class="badge badge-circ">CIRC</span></td>
+        <td class="col-params" colspan="3">${params}</td>
+        <td class="col-feed">${s.feed}</td>
+        <td class="col-comment">${comment}</td>
+        <td class="col-actions">${rowBtns}</td>
+      </tr>`;
+    }
+
+    return '';
+  }).join('');
+
+  renderGCode();
+}
+
+// ── Step CRUD ──────────────────────────────────────────────────────────────────
+function deleteStep(i)  { steps.splice(i, 1); render(); }
+function stepUp(i)      { if (i > 0) { [steps[i-1],steps[i]] = [steps[i],steps[i-1]]; render(); } }
+function stepDown(i)    { if (i < steps.length-1) { [steps[i],steps[i+1]] = [steps[i+1],steps[i]]; render(); } }
+
+function editStep(i) {
+  const s = steps[i];
+  if (s.kind === 'move')         openMoveModal(i);
+  else if (s.kind === 'slot')    openSlotModal(i);
+  else if (s.kind === 'circle')  openCircleModal(i);
+}
+
+function clearAll() {
+  if (steps.length === 0) return;
+  if (!confirm('Clear all steps?')) return;
+  steps = [];
+  render();
+}
+
+// ── Action dropdown ────────────────────────────────────────────────────────────
+function toggleActionMenu(e) {
+  e.stopPropagation();
+  document.getElementById('action-menu').classList.toggle('open');
+}
+function closeActionMenu() {
+  document.getElementById('action-menu').classList.remove('open');
+}
+document.addEventListener('click', () => closeActionMenu());
+
+// ── Move Modal ─────────────────────────────────────────────────────────────────
+function openMoveModal(index) {
+  editingIndex = (index !== undefined) ? index : null;
+  document.getElementById('move-modal-title').textContent = editingIndex !== null ? 'Edit Move' : 'Add Move';
+  document.getElementById('move-modal-error').style.display = 'none';
+
+  if (editingIndex !== null) {
+    const m = steps[editingIndex];
+    document.getElementById('f-type').value       = m.type;
+    document.getElementById('f-x').value          = m.x != null ? m.x : '';
+    document.getElementById('f-y').value          = m.y != null ? m.y : '';
+    document.getElementById('f-z').value          = m.z != null ? m.z : '';
+    document.getElementById('f-feed').value       = m.f != null ? m.f : '';
+    document.getElementById('f-comment').value    = m.comment || '';
+    document.getElementById('f-comment-g0').value = m.comment || '';
+  } else {
+    document.getElementById('f-type').value       = 'G1';
+    document.getElementById('f-x').value          = '';
+    document.getElementById('f-y').value          = '';
+    document.getElementById('f-z').value          = '';
+    document.getElementById('f-feed').value       = '';
+    document.getElementById('f-comment').value    = '';
+    document.getElementById('f-comment-g0').value = '';
+  }
+
+  onMoveTypeChange();
+  document.getElementById('move-modal-overlay').classList.add('open');
+  document.getElementById('f-x').focus();
+}
+
+function closeMoveModal() {
+  document.getElementById('move-modal-overlay').classList.remove('open');
+  editingIndex = null;
+}
+
+function closeMoveModalOnBg(e) {
+  if (e.target === document.getElementById('move-modal-overlay')) closeMoveModal();
+}
+
+function onMoveTypeChange() {
+  const isG0 = document.getElementById('f-type').value === 'G0';
+  document.getElementById('move-feed-row').style.display       = isG0 ? 'none' : '';
+  document.getElementById('move-comment-g0-row').style.display = isG0 ? '' : 'none';
+}
+
+function saveMove() {
+  const type    = document.getElementById('f-type').value;
+  const xRaw    = document.getElementById('f-x').value.trim();
+  const yRaw    = document.getElementById('f-y').value.trim();
+  const zRaw    = document.getElementById('f-z').value.trim();
+  const fRaw    = document.getElementById('f-feed').value.trim();
+  const isG0    = type === 'G0';
+  const comment = isG0
+    ? document.getElementById('f-comment-g0').value.trim()
+    : document.getElementById('f-comment').value.trim();
+  const errEl   = document.getElementById('move-modal-error');
+
+  if (xRaw === '' && yRaw === '' && zRaw === '') {
+    errEl.textContent = 'At least one coordinate (X, Y, or Z) is required.';
+    errEl.style.display = '';
+    return;
+  }
+  if (!isG0 && fRaw === '') {
+    errEl.textContent = 'Feed rate is required for G1 moves.';
+    errEl.style.display = '';
+    return;
+  }
+
+  errEl.style.display = 'none';
+  const step = {
+    id:   editingIndex !== null ? steps[editingIndex].id : nextId++,
+    kind: 'move',
+    type,
+    x: xRaw !== '' ? parseFloat(xRaw) : null,
+    y: yRaw !== '' ? parseFloat(yRaw) : null,
+    z: zRaw !== '' ? parseFloat(zRaw) : null,
+    f: fRaw !== '' ? parseFloat(fRaw) : null,
+    comment,
+  };
+
+  if (editingIndex !== null) steps[editingIndex] = step;
+  else steps.push(step);
+
+  closeMoveModal();
+  render();
+}
+
+// ── Slot Modal ─────────────────────────────────────────────────────────────────
+function openSlotModal(index) {
+  editingIndex = (index !== undefined) ? index : null;
+  document.getElementById('slot-modal-title').textContent = editingIndex !== null ? 'Edit Slot' : 'Add Slot';
+  document.getElementById('slot-modal-error').style.display = 'none';
+
+  if (editingIndex !== null) {
+    const s = steps[editingIndex];
+    document.getElementById('s-cx').value         = s.cx;
+    document.getElementById('s-sy').value         = s.sy;
+    document.getElementById('s-width').value      = s.width;
+    document.getElementById('s-length').value     = s.length;
+    document.getElementById('s-depth').value      = s.depth;
+    document.getElementById('s-feed').value       = s.feed;
+    document.getElementById('s-plunge').value     = s.plunge != null ? s.plunge : '';
+    document.getElementById('s-tool-d').value     = s.toolDiameter != null ? s.toolDiameter : '';
+    document.getElementById('s-entry-type').value = s.entryType || 'plunge';
+    document.getElementById('s-ramp-angle').value = s.rampAngle != null ? s.rampAngle : 3;
+    document.getElementById('s-stepover').value   = s.maxStepover != null ? s.maxStepover : '';
+    document.getElementById('s-stepdown').value   = s.maxStepdown != null ? s.maxStepdown : '';
+    document.getElementById('s-comment').value    = s.comment || '';
+  } else {
+    ['s-cx','s-sy','s-width','s-length','s-depth','s-feed','s-plunge','s-tool-d','s-stepover','s-stepdown','s-comment']
+      .forEach(id => document.getElementById(id).value = '');
+    document.getElementById('s-entry-type').value = 'plunge';
+    document.getElementById('s-ramp-angle').value = 3;
+  }
+
+  onSlotEntryChange();
+  document.getElementById('slot-modal-overlay').classList.add('open');
+  document.getElementById('s-cx').focus();
+}
+
+function closeSlotModal() {
+  document.getElementById('slot-modal-overlay').classList.remove('open');
+  editingIndex = null;
+}
+
+function closeSlotModalOnBg(e) {
+  if (e.target === document.getElementById('slot-modal-overlay')) closeSlotModal();
+}
+
+function onSlotEntryChange() {
+  const isRamp = document.getElementById('s-entry-type').value === 'ramp';
+  document.getElementById('s-ramp-group').style.display = isRamp ? '' : 'none';
+}
+
+// ── Circle Modal ───────────────────────────────────────────────────────────────
+function onCircleEntryChange() {
+  const isRamp = document.getElementById('c-entry-type').value === 'ramp';
+  document.getElementById('c-ramp-group').style.display = isRamp ? '' : 'none';
+}
+
+function openCircleModal(index) {
+  editingIndex = (index !== undefined) ? index : null;
+  document.getElementById('circ-modal-title').textContent = editingIndex !== null ? 'Edit Circle' : 'Add Circle';
+  document.getElementById('circ-modal-error').style.display = 'none';
+
+  if (editingIndex !== null) {
+    const s = steps[editingIndex];
+    document.getElementById('c-cx').value          = s.cx;
+    document.getElementById('c-cy').value          = s.cy;
+    document.getElementById('c-diameter').value    = s.diameter;
+    document.getElementById('c-depth').value       = s.depth;
+    document.getElementById('c-feed').value        = s.feed;
+    document.getElementById('c-plunge').value      = s.plunge != null ? s.plunge : '';
+    document.getElementById('c-tool-d').value      = s.toolDiameter != null ? s.toolDiameter : '';
+    document.getElementById('c-direction').value   = s.direction || 'ccw';
+    document.getElementById('c-entry-type').value  = s.entryType || 'plunge';
+    document.getElementById('c-ramp-angle').value  = s.rampAngle != null ? s.rampAngle : 3;
+    document.getElementById('c-stepover').value     = s.maxStepover != null ? s.maxStepover : '';
+    document.getElementById('c-stepdown').value     = s.maxStepdown != null ? s.maxStepdown : '';
+    document.getElementById('c-comment').value      = s.comment || '';
+  } else {
+    ['c-cx','c-cy','c-diameter','c-depth','c-feed','c-plunge','c-tool-d','c-stepover','c-stepdown','c-comment']
+      .forEach(id => document.getElementById(id).value = '');
+    document.getElementById('c-direction').value  = 'ccw';
+    document.getElementById('c-entry-type').value = 'plunge';
+    document.getElementById('c-ramp-angle').value = 3;
+  }
+
+  onCircleEntryChange();
+  document.getElementById('circ-modal-overlay').classList.add('open');
+  document.getElementById('c-cx').focus();
+}
+
+function closeCircleModal() {
+  document.getElementById('circ-modal-overlay').classList.remove('open');
+  editingIndex = null;
+}
+
+function closeCircleModalOnBg(e) {
+  if (e.target === document.getElementById('circ-modal-overlay')) closeCircleModal();
+}
+
+function saveCircle() {
+  const cxRaw      = document.getElementById('c-cx').value.trim();
+  const cyRaw      = document.getElementById('c-cy').value.trim();
+  const diaRaw     = document.getElementById('c-diameter').value.trim();
+  const depthRaw   = document.getElementById('c-depth').value.trim();
+  const feedRaw    = document.getElementById('c-feed').value.trim();
+  const plungeRaw  = document.getElementById('c-plunge').value.trim();
+  const toolDRaw   = document.getElementById('c-tool-d').value.trim();
+  const direction  = document.getElementById('c-direction').value;
+  const entryType  = document.getElementById('c-entry-type').value;
+  const rampRaw    = document.getElementById('c-ramp-angle').value.trim();
+  const maxStepoverRaw = document.getElementById('c-stepover').value.trim();
+  const maxStepdownRaw = document.getElementById('c-stepdown').value.trim();
+  const comment    = document.getElementById('c-comment').value.trim();
+  const errEl      = document.getElementById('circ-modal-error');
+
+  const missing = [];
+  if (diaRaw   === '') missing.push('Diameter');
+  if (depthRaw === '') missing.push('Depth');
+  if (feedRaw  === '') missing.push('Feed Rate');
+  if (missing.length) {
+    errEl.textContent = `Required: ${missing.join(', ')}`;
+    errEl.style.display = '';
+    return;
+  }
+
+  const diameter = parseFloat(diaRaw);
+  const depth    = parseFloat(depthRaw);
+  const toolD    = toolDRaw !== '' ? parseFloat(toolDRaw) : null;
+  const rampAngle = rampRaw !== '' ? parseFloat(rampRaw) : 3;
+  const maxStepover = maxStepoverRaw !== '' ? parseFloat(maxStepoverRaw) : null;
+  const maxStepdown = maxStepdownRaw !== '' ? parseFloat(maxStepdownRaw) : null;
+
+  if (diameter <= 0 || depth <= 0) {
+    errEl.textContent = 'Diameter and Depth must be greater than 0.';
+    errEl.style.display = '';
+    return;
+  }
+  if (toolD != null && toolD >= diameter) {
+    errEl.textContent = `End mill diameter (${toolD}) must be less than circle diameter (${diameter}).`;
+    errEl.style.display = '';
+    return;
+  }
+
+  errEl.style.display = 'none';
+
+  const step = {
+    id:           editingIndex !== null ? steps[editingIndex].id : nextId++,
+    kind:         'circle',
+    cx:           cxRaw !== '' ? parseFloat(cxRaw) : 0,
+    cy:           cyRaw !== '' ? parseFloat(cyRaw) : 0,
+    diameter,
+    depth,
+    feed:         parseFloat(feedRaw),
+    plunge:       plungeRaw !== '' ? parseFloat(plungeRaw) : null,
+    toolDiameter: toolD,
+    direction,
+    entryType,
+    rampAngle,
+    maxStepover,
+    maxStepdown,
+    comment,
+  };
+
+  if (editingIndex !== null) steps[editingIndex] = step;
+  else steps.push(step);
+
+  closeCircleModal();
+  render();
+}
+
+function applySlotEndMillPreset() {
+  const sel   = document.getElementById('s-tool-d-preset');
+  const mmVal = parseFloat(sel.value);
+  if (!sel.value || isNaN(mmVal)) return;
+  const val = settings.units === 'inch' ? +(mmVal / 25.4).toFixed(5) : mmVal;
+  document.getElementById('s-tool-d').value = val;
+  sel.value = '';
+}
+
+function applyCircleEndMillPreset() {
+  const sel   = document.getElementById('c-tool-d-preset');
+  const mmVal = parseFloat(sel.value);
+  if (!sel.value || isNaN(mmVal)) return;
+  const val = settings.units === 'inch' ? +(mmVal / 25.4).toFixed(5) : mmVal;
+  document.getElementById('c-tool-d').value = val;
+  sel.value = '';
+}
+
+function saveSlot() {
+  const cxRaw      = document.getElementById('s-cx').value.trim();
+  const syRaw      = document.getElementById('s-sy').value.trim();
+  const widthRaw   = document.getElementById('s-width').value.trim();
+  const lengthRaw  = document.getElementById('s-length').value.trim();
+  const depthRaw   = document.getElementById('s-depth').value.trim();
+  const feedRaw    = document.getElementById('s-feed').value.trim();
+  const plungeRaw  = document.getElementById('s-plunge').value.trim();
+  const toolDRaw   = document.getElementById('s-tool-d').value.trim();
+  const entryType  = document.getElementById('s-entry-type').value;
+  const rampRaw    = document.getElementById('s-ramp-angle').value.trim();
+  const maxStepoverRaw = document.getElementById('s-stepover').value.trim();
+  const maxStepdownRaw = document.getElementById('s-stepdown').value.trim();
+  const comment    = document.getElementById('s-comment').value.trim();
+  const errEl      = document.getElementById('slot-modal-error');
+
+  const missing = [];
+  if (widthRaw  === '') missing.push('Width');
+  if (lengthRaw === '') missing.push('Length');
+  if (depthRaw  === '') missing.push('Depth');
+  if (feedRaw   === '') missing.push('Feed Rate');
+
+  if (missing.length) {
+    errEl.textContent = `Required: ${missing.join(', ')}`;
+    errEl.style.display = '';
+    return;
+  }
+
+  const width      = parseFloat(widthRaw);
+  const length     = parseFloat(lengthRaw);
+  const depth      = parseFloat(depthRaw);
+  const toolD      = toolDRaw !== '' ? parseFloat(toolDRaw) : null;
+  const rampAngle  = rampRaw  !== '' ? parseFloat(rampRaw)  : 3;
+  const maxStepover = maxStepoverRaw !== '' ? parseFloat(maxStepoverRaw) : null;
+  const maxStepdown = maxStepdownRaw !== '' ? parseFloat(maxStepdownRaw) : null;
+
+  if (width <= 0 || length <= 0 || depth <= 0) {
+    errEl.textContent = 'Width, Length, and Depth must be greater than 0.';
+    errEl.style.display = '';
+    return;
+  }
+
+  if (toolD != null && toolD >= width) {
+    errEl.textContent = `End mill diameter (${toolD}) must be less than slot width (${width}).`;
+    errEl.style.display = '';
+    return;
+  }
+
+  if (entryType === 'ramp' && rampAngle <= 0) {
+    errEl.textContent = 'Ramp angle must be greater than 0°.';
+    errEl.style.display = '';
+    return;
+  }
+
+  if (maxStepover != null && maxStepover <= 0) {
+    errEl.textContent = 'Max Stepover must be greater than 0.';
+    errEl.style.display = '';
+    return;
+  }
+
+  if (maxStepdown != null && maxStepdown <= 0) {
+    errEl.textContent = 'Max Stepdown must be greater than 0.';
+    errEl.style.display = '';
+    return;
+  }
+
+  errEl.style.display = 'none';
+
+  const step = {
+    id:           editingIndex !== null ? steps[editingIndex].id : nextId++,
+    kind:         'slot',
+    cx:           cxRaw !== '' ? parseFloat(cxRaw) : 0,
+    sy:           syRaw !== '' ? parseFloat(syRaw) : 0,
+    width,
+    length,
+    depth,
+    feed:         parseFloat(feedRaw),
+    plunge:       plungeRaw !== '' ? parseFloat(plungeRaw) : null,
+    toolDiameter: toolD,
+    entryType,
+    rampAngle,
+    maxStepover,
+    maxStepdown,
+    comment,
+  };
+
+  if (editingIndex !== null) steps[editingIndex] = step;
+  else steps.push(step);
+
+  closeSlotModal();
+  render();
+}
+
+// ── Keyboard ───────────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeMoveModal(); closeSlotModal(); closeCircleModal(); }
+  if (e.key === 'Enter') {
+    if (document.getElementById('move-modal-overlay').classList.contains('open')  && e.target.tagName !== 'BUTTON') saveMove();
+    if (document.getElementById('slot-modal-overlay').classList.contains('open')  && e.target.tagName !== 'BUTTON') saveSlot();
+    if (document.getElementById('circ-modal-overlay').classList.contains('open')  && e.target.tagName !== 'BUTTON') saveCircle();
+  }
+});
+
+// ── G-Code Generation ──────────────────────────────────────────────────────────
+function slotToGCode(s) {
+  const safeZ      = settings.safeZ;
+  const toolR      = s.toolDiameter != null ? s.toolDiameter / 2 : 0;
+  const fullHalfW  = s.width / 2 - toolR;  // max toolpath half-width (inset by tool radius)
+  const plungeFeed = s.plunge != null ? s.plunge : Math.max(1, Math.round(s.feed / 2));
+  const maxStepdown = s.maxStepdown != null ? s.maxStepdown : s.depth;
+  const maxStepover = s.maxStepover != null ? s.maxStepover : fullHalfW * 2;
+  const lines      = [];
+
+  const label = s.comment ? `Slot: ${s.comment}` : `Slot W:${s.width} L:${s.length} D:${s.depth}`;
+  lines.push(`; --- ${label} ---`);
+  if (s.toolDiameter != null) lines.push(`; End mill: ${s.toolDiameter}  Toolpath half-width: ${fc(fullHalfW)}`);
+  if (s.maxStepdown != null)  lines.push(`; Max stepdown: ${s.maxStepdown}`);
+  if (s.maxStepover != null)  lines.push(`; Max stepover: ${s.maxStepover}`);
+
+  // Build Z depth levels
+  const zLevels = [];
+  let z = 0;
+  while (z > -s.depth) {
+    z = Math.max(-s.depth, z - maxStepdown);
+    zLevels.push(z);
+  }
+
+  // Build XY stepover passes (start narrow at center, widen to full width)
+  // Each pass is a half-width to cut; we step from innermost to outermost
+  const xPasses = [];
+  let hw = Math.min(maxStepover / 2, fullHalfW);
+  while (true) {
+    xPasses.push(hw);
+    if (hw >= fullHalfW) break;
+    hw = Math.min(hw + maxStepover / 2, fullHalfW);
+  }
+
+  lines.push(`G0 Z${fc(safeZ)}                        ; retract to safe Z`);
+
+  zLevels.forEach((zDepth, zi) => {
+    lines.push(`; --- depth pass ${zi + 1}/${zLevels.length}: Z=${fc(zDepth)} ---`);
+
+    xPasses.forEach((halfW, xi) => {
+      const isFirstPass = zi === 0 && xi === 0;
+
+      lines.push(`G0 X${fc(s.cx - halfW)} Y${fc(s.sy)}  ; position to pass start`);
+
+      if (s.entryType === 'ramp') {
+        // ── Ramp entry ──────────────────────────────────────────────────────────
+        const angleDeg   = s.rampAngle || 3;
+        const angleRad   = angleDeg * Math.PI / 180;
+        const rampNeeded = Math.abs(zDepth) / Math.tan(angleRad);
+        const rampLen    = Math.min(rampNeeded, s.length);
+        const actualDeg  = +(Math.atan(Math.abs(zDepth) / rampLen) * 180 / Math.PI).toFixed(2);
+        const prevZ      = zi === 0 ? 0.5 : zLevels[zi - 1];
+        if (isFirstPass) lines.push(`G0 Z0.5                            ; approach surface`);
+        else             lines.push(`G0 Z${fc(prevZ)}                   ; retract to previous depth`);
+        if (rampNeeded > s.length) lines.push(`; NOTE: ramp steepened to ${actualDeg}° (slot too short for ${angleDeg}°)`);
+        lines.push(`G1 X${fc(s.cx - halfW)} Y${fc(s.sy + rampLen)} Z${fc(zDepth)} F${plungeFeed}  ; ramp to depth (${actualDeg}°)`);
+        if (rampLen < s.length) lines.push(`G1 Y${fc(s.sy + s.length)} F${s.feed}    ; continue first edge`);
+      } else {
+        // ── Plunge entry ──────────────────────────────────────────────────────
+        if (isFirstPass) lines.push(`G0 Z0.5                            ; approach surface`);
+        lines.push(`G1 Z${fc(zDepth)} F${plungeFeed}          ; plunge`);
+        lines.push(`G1 Y${fc(s.sy + s.length)} F${s.feed}     ; mill first edge`);
+      }
+
+      lines.push(`G1 X${fc(s.cx + halfW)}              ; step across`);
+      lines.push(`G1 Y${fc(s.sy)}                      ; mill second edge`);
+      lines.push(`G1 X${fc(s.cx - halfW)}              ; close profile`);
+
+      // Cleanup ramp wedge on first X pass of each depth level
+      if (s.entryType === 'ramp' && xi === 0) {
+        const rampNeeded = Math.abs(zDepth) / Math.tan((s.rampAngle || 3) * Math.PI / 180);
+        const rampLen    = Math.min(rampNeeded, s.length);
+        lines.push(`G1 Y${fc(s.sy + rampLen)} F${s.feed}      ; cleanup ramp section at full depth`);
+        lines.push(`G1 Y${fc(s.sy)}                           ; return to start`);
+      }
+    });
+  });
+
+  lines.push(`G0 Z${fc(safeZ)}                        ; retract`);
+  return lines;
+}
+
+function circleToGCode(s) {
+  const safeZ      = settings.safeZ;
+  const toolR      = s.toolDiameter != null ? s.toolDiameter / 2 : 0;
+  const fullPathR  = s.diameter / 2 - toolR;  // max toolpath radius (inset by tool radius)
+  const plungeFeed = s.plunge != null ? s.plunge : Math.max(1, Math.round(s.feed / 2));
+  const arcCmd     = s.direction === 'cw' ? 'G2' : 'G3';
+  const maxStepdown = s.maxStepdown != null ? s.maxStepdown : s.depth;
+  const maxStepover = s.maxStepover != null ? s.maxStepover : fullPathR;
+  const lines      = [];
+
+  const label = s.comment ? `Circle: ${s.comment}` : `Circle Dia:${s.diameter} D:${s.depth}`;
+  lines.push(`; --- ${label} ---`);
+  if (s.toolDiameter != null) lines.push(`; End mill: ${s.toolDiameter}  Toolpath radius: ${fc(fullPathR)}`);
+  if (s.maxStepdown != null)  lines.push(`; Max stepdown: ${s.maxStepdown}`);
+  if (s.maxStepover != null)  lines.push(`; Max stepover: ${s.maxStepover}`);
+
+  // Build Z depth levels
+  const zLevels = [];
+  let z = 0;
+  while (z > -s.depth) {
+    z = Math.max(-s.depth, z - maxStepdown);
+    zLevels.push(z);
+  }
+
+  // Build radial stepover passes (start at innermost radius, step out to full)
+  const rPasses = [];
+  let r = Math.min(maxStepover, fullPathR);
+  while (true) {
+    rPasses.push(r);
+    if (r >= fullPathR) break;
+    r = Math.min(r + maxStepover, fullPathR);
+  }
+
+  // Entry point at 3 o'clock on outermost circle
+  const ex   = s.cx + fullPathR;
+  const ey   = s.cy;
+
+  lines.push(`G0 Z${fc(safeZ)}             ; retract to safe Z`);
+  lines.push(`G0 X${fc(ex)} Y${fc(ey)}     ; position to entry point`);
+
+  zLevels.forEach((zDepth, zi) => {
+    lines.push(`; --- depth pass ${zi + 1}/${zLevels.length}: Z=${fc(zDepth)} ---`);
+
+    if (s.entryType === 'ramp') {
+      // ── Helical ramp on outermost circle, then step inward ─────────────────
+      const angleDeg    = s.rampAngle || 3;
+      const angleRad    = angleDeg * Math.PI / 180;
+      const circumf     = 2 * Math.PI * fullPathR;
+      const depthNeeded = Math.abs(zDepth - (zi > 0 ? zLevels[zi-1] : 0));
+      const depthPerRev = circumf * Math.tan(angleRad);
+      const numHelix    = Math.ceil(depthNeeded / depthPerRev);
+      const depthPerH   = depthNeeded / numHelix;
+      const actualDeg   = +(Math.atan(depthPerH / circumf) * 180 / Math.PI).toFixed(2);
+      const prevZ       = zi === 0 ? 0 : zLevels[zi - 1];
+      const iOff        = fc(-fullPathR);
+
+      if (zi === 0) lines.push(`G0 Z0.5                   ; approach surface`);
+      lines.push(`; Helical ramp: ${angleDeg}° requested → ${actualDeg}° actual (${numHelix} rev)`);
+      for (let h = 1; h <= numHelix; h++) {
+        lines.push(`${arcCmd} X${fc(ex)} Y${fc(ey)} I${iOff} J0 Z${fc(prevZ - h * depthPerH)} F${plungeFeed}  ; helix ${h}/${numHelix}`);
+      }
+      // Finishing pass on outermost circle at full depth
+      lines.push(`${arcCmd} X${fc(ex)} Y${fc(ey)} I${iOff} J0 F${s.feed}  ; finish outer circle`);
+
+      // Stepover passes inward (skip outermost — already done)
+      rPasses.slice(0, -1).reverse().forEach(r => {
+        const rx = s.cx + r, iR = fc(-r);
+        lines.push(`G0 X${fc(rx)} Y${fc(ey)}     ; step to r=${fc(r)}`);
+        lines.push(`${arcCmd} X${fc(rx)} Y${fc(ey)} I${iR} J0 F${s.feed}  ; circle r=${fc(r)}`);
+      });
+    } else {
+      // ── Plunge, then stepover passes from inside out ────────────────────────
+      if (zi === 0) lines.push(`G0 Z0.5                   ; approach surface`);
+      lines.push(`G1 Z${fc(zDepth)} F${plungeFeed}    ; plunge`);
+
+      rPasses.forEach(r => {
+        const rx = s.cx + r, iR = fc(-r);
+        lines.push(`G0 X${fc(rx)} Y${fc(ey)}     ; move to r=${fc(r)}`);
+        lines.push(`${arcCmd} X${fc(rx)} Y${fc(ey)} I${iR} J0 F${s.feed}  ; circle r=${fc(r)}`);
+      });
+    }
+  });
+
+  lines.push(`G0 Z${fc(safeZ)}             ; retract`);
+  return lines;
+}
+
+function buildGCode() {
+  const name  = document.getElementById('program-name').value.trim() || 'untitled';
+  const lines = [];
+
+  lines.push(`; Program: ${name}`);
+  lines.push('; Generated by GCode Builder');
+  lines.push('');
+  lines.push(settings.units === 'mm' ? 'G21 ; Set units to mm' : 'G20 ; Set units to inches');
+  lines.push(settings.positioning === 'absolute' ? 'G90 ; Absolute positioning' : 'G91 ; Incremental positioning');
+
+  if (settings.safeZMove) lines.push(`G0 Z${fc(settings.safeZ)} ; Retract to safe Z`);
+  if (settings.spindle)   lines.push(`M3 S${settings.rpm} ; Spindle on`);
+
+  if (steps.length > 0) lines.push('');
+
+  let lastF = null;
+
+  steps.forEach(s => {
+    if (s.kind === 'move') {
+      const parts = [s.type];
+      if (s.x != null) parts.push(`X${fc(s.x)}`);
+      if (s.y != null) parts.push(`Y${fc(s.y)}`);
+      if (s.z != null) parts.push(`Z${fc(s.z)}`);
+      if (s.type === 'G1' && s.f != null && s.f !== lastF) {
+        parts.push(`F${s.f}`);
+        lastF = s.f;
+      }
+      let line = parts.join(' ');
+      if (s.comment) line += ` ; ${s.comment}`;
+      lines.push(line);
+    } else if (s.kind === 'slot') {
+      lines.push('');
+      slotToGCode(s).forEach(l => lines.push(l));
+      lines.push('');
+      lastF = null;
+    } else if (s.kind === 'circle') {
+      lines.push('');
+      circleToGCode(s).forEach(l => lines.push(l));
+      lines.push('');
+      lastF = null;
+    }
+  });
+
+  if (settings.spindle) lines.push('M5 ; Spindle off');
+  lines.push('');
+  lines.push('M30 ; End of program');
+
+  return lines.join('\n');
+}
+
+function renderGCode() {
+  document.getElementById('gcode-output').value = buildGCode();
+}
+
+// ── Copy / Download ────────────────────────────────────────────────────────────
+function copyGCode() {
+  navigator.clipboard.writeText(buildGCode()).then(() => showToast('Copied to clipboard'));
+}
+
+function downloadGCode() {
+  const gcode    = buildGCode();
+  const name     = document.getElementById('program-name').value.trim() || 'program';
+  const filename = name.replace(/[^a-zA-Z0-9_-]/g, '_') + '.nc';
+
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/download';
+
+  const gi = document.createElement('input'); gi.type='hidden'; gi.name='gcode';     gi.value=gcode;
+  const fi = document.createElement('input'); fi.type='hidden'; fi.name='filename';  fi.value=filename;
+  form.appendChild(gi); form.appendChild(fi);
+  document.body.appendChild(form);
+  form.submit();
+  document.body.removeChild(form);
+}
+
+function showToast(msg, isError = false) {
+  const t = document.getElementById('copy-toast');
+  t.textContent = msg;
+  t.style.borderColor = isError ? 'var(--red)' : 'var(--border)';
+  t.style.color       = isError ? 'var(--red)'  : 'var(--text)';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), isError ? 5000 : 2000);
+}
+
+// ── gSender discovery ──────────────────────────────────────────────────────────
+async function discoverGSender(e) {
+  e.stopPropagation();
+  const port = document.getElementById('gs-http-port').value.trim() || '8000';
+  const btn  = document.getElementById('btn-scan');
+  const dd   = document.getElementById('scan-dropdown');
+
+  btn.disabled    = true;
+  btn.textContent = '…';
+  dd.classList.remove('open');
+
+  try {
+    const resp = await fetch(`/discover-gsender?port=${encodeURIComponent(port)}`);
+    const data = await resp.json();
+    if (!resp.ok) { showToast(data.error || 'Scan failed', true); return; }
+
+    const hosts = data.hosts || [];
+    if (hosts.length === 0) {
+      showToast(`No gSender found on ${data.subnet}`, true);
+    } else if (hosts.length === 1) {
+      document.getElementById('gs-host').value = hosts[0];
+      saveGSenderSettings();
+      showToast(`Found gSender at ${hosts[0]} \u2713`);
+    } else {
+      dd.innerHTML = hosts.map(h =>
+        `<button onclick="selectGSenderHost('${h}')">${h}</button>`
+      ).join('');
+      dd.classList.add('open');
+      setTimeout(() => document.addEventListener('click', closeScanDropdown, { once: true }), 0);
+    }
+  } catch (err) {
+    showToast('Scan error: ' + err.message, true);
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = '🔍';
+  }
+}
+
+function selectGSenderHost(ip) {
+  document.getElementById('gs-host').value = ip;
+  saveGSenderSettings();
+  document.getElementById('scan-dropdown').classList.remove('open');
+  showToast(`gSender host set to ${ip} \u2713`);
+}
+
+function closeScanDropdown() {
+  document.getElementById('scan-dropdown').classList.remove('open');
+}
+
+function toggleScanBtn() {
+  const enabled = document.getElementById('gs-scan-enabled').checked;
+  document.getElementById('btn-scan').style.display = enabled ? '' : 'none';
+  if (!enabled) closeScanDropdown();
+}
+
+// ── gSender ────────────────────────────────────────────────────────────────────
+async function sendToGSender() {
+  const host     = document.getElementById('gs-host').value.trim()      || 'localhost';
+  const httpPort = document.getElementById('gs-http-port').value.trim() || '8000';
+  const gcode    = buildGCode();
+  const name     = (document.getElementById('program-name').value.trim() || 'program') + '.nc';
+
+  const btn = document.getElementById('btn-gsender');
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+
+  try {
+    const resp = await fetch('/send-to-gsender', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ host, httpPort, gcode, name }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok) {
+      showToast('Sent to gSender \u2713');
+    } else {
+      showToast('gSender: ' + (data.error || data.message || `HTTP ${resp.status}`), true);
+    }
+  } catch (e) {
+    showToast('Could not reach gSender', true);
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = '\u25B6 Send to gSender';
+  }
+}
+
+// ── Settings persistence (localStorage) ────────────────────────────────────────
+const SETTINGS_TEXT = [
+  'program-name', 'setting-safez', 'setting-rpm',
+  'gs-host', 'gs-http-port',
+];
+const SETTINGS_SELECT = ['setting-units', 'setting-positioning'];
+const SETTINGS_CHECK  = ['setting-safez-move', 'setting-spindle', 'gs-scan-enabled'];
+
+function saveSettings() {
+  SETTINGS_TEXT.forEach(id => {
+    localStorage.setItem(id, document.getElementById(id).value);
+  });
+  SETTINGS_SELECT.forEach(id => {
+    localStorage.setItem(id, document.getElementById(id).value);
+  });
+  SETTINGS_CHECK.forEach(id => {
+    localStorage.setItem(id, document.getElementById(id).checked ? '1' : '0');
+  });
+}
+
+// Alias so existing callers in discoverGSender/selectGSenderHost still work
+function saveGSenderSettings() { saveSettings(); }
+
+function loadSettings() {
+  SETTINGS_TEXT.forEach(id => {
+    const v = localStorage.getItem(id);
+    if (v !== null) document.getElementById(id).value = v;
+  });
+  SETTINGS_SELECT.forEach(id => {
+    const v = localStorage.getItem(id);
+    if (v !== null) document.getElementById(id).value = v;
+  });
+  SETTINGS_CHECK.forEach(id => {
+    const v = localStorage.getItem(id);
+    if (v !== null) document.getElementById(id).checked = v === '1';
+  });
+}
+
+loadSettings();
+toggleScanBtn();
+
+// Wire up save-on-change for all settings (renderGCode listeners already exist above)
+[...SETTINGS_TEXT, ...SETTINGS_SELECT, ...SETTINGS_CHECK].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('change', saveSettings);
+  if (id === 'program-name') el.addEventListener('input', saveSettings);
+});
+
+render();
+</script>
+</body>
+</html>
