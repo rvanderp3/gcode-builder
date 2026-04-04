@@ -514,6 +514,8 @@
     <div class="panel-toolbar">
       <h2>G-Code Output</h2>
       <button class="btn small" onclick="copyGCode()">Copy</button>
+      <button class="btn small" onclick="document.getElementById('open-project-input').click()">&#x2191; Open</button>
+      <input type="file" id="open-project-input" accept=".nc" style="display:none" onchange="openProjectFile(event)">
       <button class="btn small primary" onclick="downloadGCode()">&#x2193; Download .nc</button>
       <button class="btn small gsender" id="btn-gsender" onclick="sendToGSender()">&#x25B6; Send to gSender</button>
     </div>
@@ -586,9 +588,9 @@
     <!-- Position -->
     <div class="form-row">
       <div class="form-group">
-        <label>Center X</label>
+        <label>Start X</label>
         <input type="number" id="s-cx" placeholder="0" step="0.001">
-        <span class="form-hint">X center of the slot</span>
+        <span class="form-hint">X position where slot begins</span>
       </div>
       <div class="form-group">
         <label>Start Y</label>
@@ -600,16 +602,39 @@
     <hr class="form-divider">
 
     <!-- Dimensions -->
+    <div class="form-row" style="align-items:flex-end;margin-bottom:4px">
+      <div class="form-group" style="flex:none">
+        <label>End defined by</label>
+        <div style="display:flex;gap:12px;align-items:center;padding-top:6px">
+          <label style="display:flex;align-items:center;gap:5px;font-weight:normal;cursor:pointer;white-space:nowrap">
+            <input type="radio" name="s-end-mode" id="s-mode-length" value="length" onchange="onSlotModeChange()" checked> Length
+          </label>
+          <label style="display:flex;align-items:center;gap:5px;font-weight:normal;cursor:pointer;white-space:nowrap">
+            <input type="radio" name="s-end-mode" id="s-mode-endpoint" value="endpoint" onchange="onSlotModeChange()"> End Point
+          </label>
+        </div>
+      </div>
+    </div>
     <div class="form-row">
       <div class="form-group">
-        <label>Width (X)</label>
+        <label>Width</label>
         <input type="number" id="s-width" placeholder="e.g. 5" step="0.001" min="0.001">
-        <span class="form-hint">Total slot width in X</span>
+        <span class="form-hint">Total slot width (perpendicular to axis)</span>
       </div>
-      <div class="form-group">
-        <label>Length (Y)</label>
+      <div class="form-group" id="s-length-group">
+        <label>Length</label>
         <input type="number" id="s-length" placeholder="e.g. 20" step="0.001" min="0.001">
-        <span class="form-hint">Slot length in +Y direction</span>
+        <span class="form-hint">Slot length along its axis</span>
+      </div>
+      <div class="form-group" id="s-ex-group" style="display:none">
+        <label>End X</label>
+        <input type="number" id="s-ex" placeholder="0" step="0.001">
+        <span class="form-hint">X center of slot end</span>
+      </div>
+      <div class="form-group" id="s-ey-group" style="display:none">
+        <label>End Y</label>
+        <input type="number" id="s-ey" placeholder="0" step="0.001">
+        <span class="form-hint">Y center of slot end</span>
       </div>
       <div class="form-group">
         <label>Depth (Z)</label>
@@ -955,7 +980,10 @@ function render() {
       const pv        = v => `<span class="pv">${v}</span>`;
       const toolPart  = s.toolDiameter != null ? ` &nbsp;&#x2300;:${pv(fc(s.toolDiameter))}` : '';
       const entryPart = s.entryType === 'ramp' ? ` &nbsp;Ramp:${pv(s.rampAngle || 3)}°` : ' &nbsp;Plunge';
-      const params    = `Cx:${pv(fc(s.cx))} &nbsp;sY:${pv(fc(s.sy))} &nbsp;W:${pv(fc(s.width))} &nbsp;L:${pv(fc(s.length))} &nbsp;D:${pv(fc(s.depth))}${toolPart}${entryPart}`;
+      const endPart   = s.ex != null
+        ? `eX:${pv(fc(s.ex))} &nbsp;eY:${pv(fc(s.ey))}`
+        : `L:${pv(fc(s.length))}`;
+      const params    = `sX:${pv(fc(s.cx))} &nbsp;sY:${pv(fc(s.sy))} &nbsp;W:${pv(fc(s.width))} &nbsp;${endPart} &nbsp;D:${pv(fc(s.depth))}${toolPart}${entryPart}`;
       return `<tr class="step-action">
         <td class="col-num">${i+1}</td>
         <td class="col-type"><span class="badge badge-slot">SLOT</span></td>
@@ -1113,10 +1141,10 @@ function openSlotModal(index) {
 
   if (editingIndex !== null) {
     const s = steps[editingIndex];
+    const useEndPt = s.ex != null;
     document.getElementById('s-cx').value         = s.cx;
     document.getElementById('s-sy').value         = s.sy;
     document.getElementById('s-width').value      = s.width;
-    document.getElementById('s-length').value     = s.length;
     document.getElementById('s-depth').value      = s.depth;
     document.getElementById('s-feed').value       = s.feed;
     document.getElementById('s-plunge').value     = s.plunge != null ? s.plunge : '';
@@ -1126,13 +1154,29 @@ function openSlotModal(index) {
     document.getElementById('s-stepover').value   = s.maxStepover != null ? s.maxStepover : '';
     document.getElementById('s-stepdown').value   = s.maxStepdown != null ? s.maxStepdown : '';
     document.getElementById('s-comment').value    = s.comment || '';
+    if (useEndPt) {
+      document.getElementById('s-mode-endpoint').checked = true;
+      document.getElementById('s-ex').value = s.ex;
+      document.getElementById('s-ey').value = s.ey;
+      document.getElementById('s-length').value = '';
+    } else {
+      document.getElementById('s-mode-length').checked = true;
+      document.getElementById('s-length').value = s.length;
+      document.getElementById('s-ex').value = '';
+      document.getElementById('s-ey').value = '';
+    }
   } else {
-    ['s-cx','s-sy','s-width','s-length','s-depth','s-feed','s-plunge','s-tool-d','s-stepover','s-stepdown','s-comment']
+    ['s-width','s-length','s-ex','s-ey','s-depth','s-feed','s-plunge','s-tool-d','s-stepover','s-stepdown','s-comment']
       .forEach(id => document.getElementById(id).value = '');
+    document.getElementById('s-cx').value = 0;
+    document.getElementById('s-sy').value = 0;
+    document.getElementById('s-mode-length').checked = true;
     document.getElementById('s-entry-type').value = 'plunge';
     document.getElementById('s-ramp-angle').value = 3;
   }
+  document.getElementById('s-tool-d-preset').value = '';
 
+  onSlotModeChange();
   onSlotEntryChange();
   document.getElementById('slot-modal-overlay').classList.add('open');
   document.getElementById('s-cx').focus();
@@ -1145,6 +1189,13 @@ function closeSlotModal() {
 
 function closeSlotModalOnBg(e) {
   if (e.target === document.getElementById('slot-modal-overlay')) closeSlotModal();
+}
+
+function onSlotModeChange() {
+  const isEndPt = document.getElementById('s-mode-endpoint').checked;
+  document.getElementById('s-length-group').style.display = isEndPt ? 'none' : '';
+  document.getElementById('s-ex-group').style.display     = isEndPt ? '' : 'none';
+  document.getElementById('s-ey-group').style.display     = isEndPt ? '' : 'none';
 }
 
 function onSlotEntryChange() {
@@ -1277,7 +1328,11 @@ function applySlotEndMillPreset() {
   if (!sel.value || isNaN(mmVal)) return;
   const val = settings.units === 'inch' ? +(mmVal / 25.4).toFixed(5) : mmVal;
   document.getElementById('s-tool-d').value = val;
-  sel.value = '';
+  const stepover  = +(val * 0.45).toFixed(4);
+  const stepdown  = +(val * 0.75).toFixed(4);
+  document.getElementById('s-stepover').value = stepover;
+  document.getElementById('s-stepdown').value = stepdown;
+  // keep sel showing the chosen size — do not reset to ''
 }
 
 function applyCircleEndMillPreset() {
@@ -1293,7 +1348,6 @@ function saveSlot() {
   const cxRaw      = document.getElementById('s-cx').value.trim();
   const syRaw      = document.getElementById('s-sy').value.trim();
   const widthRaw   = document.getElementById('s-width').value.trim();
-  const lengthRaw  = document.getElementById('s-length').value.trim();
   const depthRaw   = document.getElementById('s-depth').value.trim();
   const feedRaw    = document.getElementById('s-feed').value.trim();
   const plungeRaw  = document.getElementById('s-plunge').value.trim();
@@ -1304,12 +1358,19 @@ function saveSlot() {
   const maxStepdownRaw = document.getElementById('s-stepdown').value.trim();
   const comment    = document.getElementById('s-comment').value.trim();
   const errEl      = document.getElementById('slot-modal-error');
+  const useEndPt   = document.getElementById('s-mode-endpoint').checked;
 
   const missing = [];
-  if (widthRaw  === '') missing.push('Width');
-  if (lengthRaw === '') missing.push('Length');
-  if (depthRaw  === '') missing.push('Depth');
-  if (feedRaw   === '') missing.push('Feed Rate');
+  if (widthRaw === '') missing.push('Width');
+  if (depthRaw === '') missing.push('Depth');
+  if (feedRaw  === '') missing.push('Feed Rate');
+  if (!useEndPt) {
+    const lengthRaw = document.getElementById('s-length').value.trim();
+    if (lengthRaw === '') missing.push('Length');
+  } else {
+    if (document.getElementById('s-ex').value.trim() === '') missing.push('End X');
+    if (document.getElementById('s-ey').value.trim() === '') missing.push('End Y');
+  }
 
   if (missing.length) {
     errEl.textContent = `Required: ${missing.join(', ')}`;
@@ -1317,13 +1378,31 @@ function saveSlot() {
     return;
   }
 
-  const width      = parseFloat(widthRaw);
-  const length     = parseFloat(lengthRaw);
-  const depth      = parseFloat(depthRaw);
-  const toolD      = toolDRaw !== '' ? parseFloat(toolDRaw) : null;
+  const cx    = cxRaw !== '' ? parseFloat(cxRaw) : 0;
+  const sy    = syRaw !== '' ? parseFloat(syRaw) : 0;
+  const width = parseFloat(widthRaw);
+  const depth = parseFloat(depthRaw);
+  const toolD = toolDRaw !== '' ? parseFloat(toolDRaw) : null;
   const rampAngle  = rampRaw  !== '' ? parseFloat(rampRaw)  : 3;
   const maxStepover = maxStepoverRaw !== '' ? parseFloat(maxStepoverRaw) : null;
   const maxStepdown = maxStepdownRaw !== '' ? parseFloat(maxStepdownRaw) : null;
+
+  let length, ex, ey;
+  if (useEndPt) {
+    ex = parseFloat(document.getElementById('s-ex').value.trim());
+    ey = parseFloat(document.getElementById('s-ey').value.trim());
+    const dx = ex - cx, dy = ey - sy;
+    length = Math.sqrt(dx * dx + dy * dy);
+    if (length < 0.001) {
+      errEl.textContent = 'End Point must be different from Start Point.';
+      errEl.style.display = '';
+      return;
+    }
+  } else {
+    length = parseFloat(document.getElementById('s-length').value.trim());
+    ex = undefined;
+    ey = undefined;
+  }
 
   if (width <= 0 || length <= 0 || depth <= 0) {
     errEl.textContent = 'Width, Length, and Depth must be greater than 0.';
@@ -1360,8 +1439,9 @@ function saveSlot() {
   const step = {
     id:           editingIndex !== null ? steps[editingIndex].id : nextId++,
     kind:         'slot',
-    cx:           cxRaw !== '' ? parseFloat(cxRaw) : 0,
-    sy:           syRaw !== '' ? parseFloat(syRaw) : 0,
+    cx,
+    sy,
+    ...(ex != null ? { ex, ey } : {}),
     width,
     length,
     depth,
@@ -1397,12 +1477,26 @@ function slotToGCode(s) {
   const safeZ      = settings.safeZ;
   const toolR      = s.toolDiameter != null ? s.toolDiameter / 2 : 0;
   const fullHalfW  = s.width / 2 - toolR;  // max toolpath half-width (inset by tool radius)
-  const plungeFeed = s.plunge != null ? s.plunge : Math.max(1, Math.round(s.feed / 2));
+  const plungeFeed = s.plunge != null ? s.plunge
+    : s.entryType === 'ramp'
+      ? (() => { const t = ((s.rampAngle || 3) - 1) / 89;
+                 return Math.max(1, Math.round(s.feed * 0.9 * (1 - t) + 70 * t)); })()
+    : 70;
   const maxStepdown = s.maxStepdown != null ? s.maxStepdown : s.depth;
   const maxStepover = s.maxStepover != null ? s.maxStepover : fullHalfW * 2;
   const lines      = [];
 
-  const label = s.comment ? `Slot: ${s.comment}` : `Slot W:${s.width} L:${s.length} D:${s.depth}`;
+  // Slot axis: start center A → end center B
+  // For Y-parallel slots (no ex/ey), B is directly above A in Y.
+  const ax = s.cx,  ay = s.sy;
+  const bx = s.ex != null ? s.ex : s.cx;
+  const by = s.ey != null ? s.ey : s.sy + s.length;
+  const rawDx = bx - ax, rawDy = by - ay;
+  const slotLen = Math.sqrt(rawDx * rawDx + rawDy * rawDy);
+  const dx = rawDx / slotLen, dy = rawDy / slotLen;  // unit vector along slot axis
+  const px = -dy,            py =  dx;               // unit vector perpendicular (left side)
+
+  const label = s.comment ? `Slot: ${s.comment}` : `Slot W:${s.width} L:${fc(slotLen)} D:${s.depth}`;
   lines.push(`; --- ${label} ---`);
   if (s.toolDiameter != null) lines.push(`; End mill: ${s.toolDiameter}  Toolpath half-width: ${fc(fullHalfW)}`);
   if (s.maxStepdown != null)  lines.push(`; Max stepdown: ${s.maxStepdown}`);
@@ -1416,8 +1510,7 @@ function slotToGCode(s) {
     zLevels.push(z);
   }
 
-  // Build XY stepover passes (start narrow at center, widen to full width)
-  // Each pass is a half-width to cut; we step from innermost to outermost
+  // Build stepover passes (innermost to outermost)
   const xPasses = [];
   let hw = Math.min(maxStepover / 2, fullHalfW);
   while (true) {
@@ -1429,43 +1522,68 @@ function slotToGCode(s) {
   lines.push(`G0 Z${fc(safeZ)}                        ; retract to safe Z`);
 
   zLevels.forEach((zDepth, zi) => {
-    lines.push(`; --- depth pass ${zi + 1}/${zLevels.length}: Z=${fc(zDepth)} ---`);
+    // Final stepdown is often shallower — boost feed proportionally.
+    // At full stepdown depth → 100% feed; approaching 0 depth → 200% feed.
+    const isLastLevel  = zi === zLevels.length - 1;
+    const prevDepth    = zi > 0 ? Math.abs(zLevels[zi - 1]) : 0;
+    const thisCutDepth = s.depth - prevDepth;
+    const feedMult     = isLastLevel ? Math.min(2, 2 - thisCutDepth / maxStepdown) : 1;
+    const levelFeed    = feedMult > 1 ? Math.round(s.feed * feedMult) : s.feed;
+
+    const feedNote = feedMult > 1 ? ` feed x${feedMult.toFixed(2)} → F${levelFeed}` : '';
+    lines.push(`; --- depth pass ${zi + 1}/${zLevels.length}: Z=${fc(zDepth)}${feedNote} ---`);
 
     xPasses.forEach((halfW, xi) => {
-      const isFirstPass = zi === 0 && xi === 0;
+      const isFirstZPass = zi === 0 && xi === 0;
 
-      lines.push(`G0 X${fc(s.cx - halfW)} Y${fc(s.sy)}  ; position to pass start`);
+      // Four corners of this toolpath pass:
+      //   lsX/lsY = left side at start   (A offset left by halfW perp)
+      //   leX/leY = left side at end     (B offset left by halfW perp)
+      //   reX/reY = right side at end    (B offset right by halfW perp)
+      //   rsX/rsY = right side at start  (A offset right by halfW perp)
+      const lsX = ax + px * halfW,  lsY = ay + py * halfW;
+      const leX = bx + px * halfW,  leY = by + py * halfW;
+      const reX = bx - px * halfW,  reY = by - py * halfW;
+      const rsX = ax - px * halfW,  rsY = ay - py * halfW;
 
-      if (s.entryType === 'ramp') {
-        // ── Ramp entry ──────────────────────────────────────────────────────────
-        const angleDeg   = s.rampAngle || 3;
-        const angleRad   = angleDeg * Math.PI / 180;
-        const rampNeeded = Math.abs(zDepth) / Math.tan(angleRad);
-        const rampLen    = Math.min(rampNeeded, s.length);
-        const actualDeg  = +(Math.atan(Math.abs(zDepth) / rampLen) * 180 / Math.PI).toFixed(2);
-        const prevZ      = zi === 0 ? 0.5 : zLevels[zi - 1];
-        if (isFirstPass) lines.push(`G0 Z0.5                            ; approach surface`);
-        else             lines.push(`G0 Z${fc(prevZ)}                   ; retract to previous depth`);
-        if (rampNeeded > s.length) lines.push(`; NOTE: ramp steepened to ${actualDeg}° (slot too short for ${angleDeg}°)`);
-        lines.push(`G1 X${fc(s.cx - halfW)} Y${fc(s.sy + rampLen)} Z${fc(zDepth)} F${plungeFeed}  ; ramp to depth (${actualDeg}°)`);
-        if (rampLen < s.length) lines.push(`G1 Y${fc(s.sy + s.length)} F${s.feed}    ; continue first edge`);
+      lines.push(`G0 X${fc(lsX)} Y${fc(lsY)}  ; position to pass start`);
+
+      if (xi === 0) {
+        // ── Entry — only needed on the first stepover pass of each depth level ──
+        if (s.entryType === 'ramp') {
+          const angleDeg   = s.rampAngle || 3;
+          const angleRad   = angleDeg * Math.PI / 180;
+          const rampNeeded = Math.abs(zDepth) / Math.tan(angleRad);
+          const rampLen    = Math.min(rampNeeded, slotLen);
+          const actualDeg  = +(Math.atan(Math.abs(zDepth) / rampLen) * 180 / Math.PI).toFixed(2);
+          const prevZ      = zi === 0 ? 0.5 : zLevels[zi - 1];
+          if (isFirstZPass) lines.push(`G0 Z0.5                            ; approach surface`);
+          else              lines.push(`G0 Z${fc(prevZ)}                   ; retract to previous depth`);
+          if (rampNeeded > slotLen) lines.push(`; NOTE: ramp steepened to ${actualDeg}° (slot too short for ${angleDeg}°)`);
+          const rampEndX = lsX + dx * rampLen, rampEndY = lsY + dy * rampLen;
+          lines.push(`G1 X${fc(rampEndX)} Y${fc(rampEndY)} Z${fc(zDepth)} F${plungeFeed}  ; ramp to depth (${actualDeg}°)`);
+          if (rampLen < slotLen) lines.push(`G1 X${fc(leX)} Y${fc(leY)} F${levelFeed}    ; continue first edge`);
+        } else {
+          if (isFirstZPass) lines.push(`G0 Z0.5                            ; approach surface`);
+          lines.push(`G1 Z${fc(zDepth)} F${plungeFeed}          ; plunge`);
+          lines.push(`G1 X${fc(leX)} Y${fc(leY)} F${levelFeed}     ; mill first edge`);
+        }
       } else {
-        // ── Plunge entry ──────────────────────────────────────────────────────
-        if (isFirstPass) lines.push(`G0 Z0.5                            ; approach surface`);
-        lines.push(`G1 Z${fc(zDepth)} F${plungeFeed}          ; plunge`);
-        lines.push(`G1 Y${fc(s.sy + s.length)} F${s.feed}     ; mill first edge`);
+        // ── Subsequent stepover passes — already at depth, just mill ─────────
+        lines.push(`G1 X${fc(leX)} Y${fc(leY)} F${levelFeed}     ; mill first edge`);
       }
 
-      lines.push(`G1 X${fc(s.cx + halfW)}              ; step across`);
-      lines.push(`G1 Y${fc(s.sy)}                      ; mill second edge`);
-      lines.push(`G1 X${fc(s.cx - halfW)}              ; close profile`);
+      lines.push(`G1 X${fc(reX)} Y${fc(reY)}              ; step across`);
+      lines.push(`G1 X${fc(rsX)} Y${fc(rsY)}              ; mill second edge`);
+      lines.push(`G1 X${fc(lsX)} Y${fc(lsY)}              ; close profile`);
 
-      // Cleanup ramp wedge on first X pass of each depth level
+      // Cleanup ramp wedge after the first (and only) ramp entry per depth level
       if (s.entryType === 'ramp' && xi === 0) {
         const rampNeeded = Math.abs(zDepth) / Math.tan((s.rampAngle || 3) * Math.PI / 180);
-        const rampLen    = Math.min(rampNeeded, s.length);
-        lines.push(`G1 Y${fc(s.sy + rampLen)} F${s.feed}      ; cleanup ramp section at full depth`);
-        lines.push(`G1 Y${fc(s.sy)}                           ; return to start`);
+        const rampLen    = Math.min(rampNeeded, slotLen);
+        const rampEndX   = lsX + dx * rampLen, rampEndY = lsY + dy * rampLen;
+        lines.push(`G1 X${fc(rampEndX)} Y${fc(rampEndY)} F${levelFeed}      ; cleanup ramp section at full depth`);
+        lines.push(`G1 X${fc(lsX)} Y${fc(lsY)}                              ; return to start`);
       }
     });
   });
@@ -1478,7 +1596,11 @@ function circleToGCode(s) {
   const safeZ      = settings.safeZ;
   const toolR      = s.toolDiameter != null ? s.toolDiameter / 2 : 0;
   const fullPathR  = s.diameter / 2 - toolR;  // max toolpath radius (inset by tool radius)
-  const plungeFeed = s.plunge != null ? s.plunge : Math.max(1, Math.round(s.feed / 2));
+  const plungeFeed = s.plunge != null ? s.plunge
+    : s.entryType === 'ramp'
+      ? (() => { const t = ((s.rampAngle || 3) - 1) / 89;
+                 return Math.max(1, Math.round(s.feed * 0.9 * (1 - t) + 70 * t)); })()
+    : 70;
   const arcCmd     = s.direction === 'cw' ? 'G2' : 'G3';
   const maxStepdown = s.maxStepdown != null ? s.maxStepdown : s.depth;
   const maxStepover = s.maxStepover != null ? s.maxStepover : fullPathR;
@@ -1621,9 +1743,28 @@ function copyGCode() {
 }
 
 function downloadGCode() {
-  const gcode    = buildGCode();
   const name     = document.getElementById('program-name').value.trim() || 'program';
   const filename = name.replace(/[^a-zA-Z0-9_-]/g, '_') + '.nc';
+
+  const projectData = {
+    version:  1,
+    name,
+    settings: {
+      units:       settings.units,
+      positioning: settings.positioning,
+      safeZ:       settings.safeZ,
+      safeZMove:   settings.safeZMove,
+      spindle:     settings.spindle,
+      rpm:         settings.rpm,
+    },
+    steps,
+    nextId,
+  };
+
+  const gcode = buildGCode()
+    + '\n; --- GCODE-BUILDER-PROJECT-BEGIN ---'
+    + '\n; ' + JSON.stringify(projectData)
+    + '\n; --- GCODE-BUILDER-PROJECT-END ---';
 
   const form = document.createElement('form');
   form.method = 'POST';
@@ -1635,6 +1776,63 @@ function downloadGCode() {
   document.body.appendChild(form);
   form.submit();
   document.body.removeChild(form);
+}
+
+function openProjectFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  if (steps.length > 0 && !confirm('Opening a project will replace the current steps. Continue?')) {
+    event.target.value = '';
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    const beginMarker = '; --- GCODE-BUILDER-PROJECT-BEGIN ---';
+    const beginIdx = text.indexOf(beginMarker);
+    if (beginIdx === -1) {
+      showToast('No project data found in this file.', true);
+      event.target.value = '';
+      return;
+    }
+    const lineStart = text.indexOf('\n', beginIdx) + 1;
+    const lineEnd   = text.indexOf('\n', lineStart);
+    const jsonLine  = text.slice(lineStart, lineEnd === -1 ? undefined : lineEnd).trim();
+    if (!jsonLine.startsWith('; ')) {
+      showToast('Could not parse project data.', true);
+      event.target.value = '';
+      return;
+    }
+    let data;
+    try { data = JSON.parse(jsonLine.slice(2)); }
+    catch { showToast('Could not parse project data.', true); event.target.value = ''; return; }
+
+    if (data.name) document.getElementById('program-name').value = data.name;
+    if (data.settings) {
+      const sv = data.settings;
+      if (sv.units)          document.getElementById('setting-units').value       = sv.units;
+      if (sv.positioning)    document.getElementById('setting-positioning').value = sv.positioning;
+      if (sv.safeZ != null)  document.getElementById('setting-safez').value       = sv.safeZ;
+      if (sv.safeZMove != null) document.getElementById('setting-safez-move').checked = sv.safeZMove;
+      if (sv.spindle != null) {
+        document.getElementById('setting-spindle').checked = sv.spindle;
+        document.getElementById('spindle-rpm-label').style.display = sv.spindle ? '' : 'none';
+      }
+      if (sv.rpm != null) document.getElementById('setting-rpm').value = sv.rpm;
+    }
+
+    steps  = data.steps  || [];
+    nextId = data.nextId || (steps.length ? Math.max(...steps.map(s => s.id)) + 1 : 1);
+
+    render();
+    renderGCode();
+    saveSettings();
+    showToast('Project loaded');
+    event.target.value = '';
+  };
+  reader.readAsText(file);
 }
 
 function showToast(msg, isError = false) {
